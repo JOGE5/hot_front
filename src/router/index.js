@@ -8,6 +8,8 @@ import HabitacionesView from '../views/HabitacionesView.vue';
 import ReservacionesView from '../views/ReservacionesView.vue';
 import CrearReservacionView from '../views/CrearReservacionView.vue';
 import MenuDiaView from '../views/MenuDiaView.vue';
+import PerfilView from '../views/PerfilView.vue';
+import PuntosTuristicosView from '../views/PuntosTuristicosView.vue';
 
 const routes = [
   {
@@ -48,6 +50,16 @@ const routes = [
         path: 'menu-del-dia',
         name: 'menu-dia',
         component: MenuDiaView,
+      },
+      {
+        path: 'perfil',
+        name: 'perfil',
+        component: PerfilView,
+      },
+      {
+        path: 'puntos-turisticos',
+        name: 'puntos-turisticos',
+        component: PuntosTuristicosView,
       },
     ],
   },
