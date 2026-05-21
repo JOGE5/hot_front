@@ -17,16 +17,32 @@ function normalizeRooms(payload) {
   return payload?.data || payload?.habitaciones || payload || [];
 }
 
+function extractApiMessage(err) {
+  const data = err.response?.data;
+
+  if (data?.message) return data.message;
+
+  if (data?.errors) {
+    const firstError = Object.values(data.errors)
+      .flat()
+      .find(Boolean);
+
+    if (firstError) return firstError;
+  }
+
+  return 'No pudimos cargar las habitaciones disponibles.';
+}
+
 function validateDates(requireBoth = false) {
   error.value = '';
 
   if (requireBoth && !fechaEntrada.value) {
-    error.value = 'La fecha de entrada es requerida para buscar por fechas.';
+    error.value = 'Selecciona una fecha de entrada.';
     return false;
   }
 
   if (requireBoth && !fechaSalida.value) {
-    error.value = 'La fecha de salida es requerida para buscar por fechas.';
+    error.value = 'Selecciona una fecha de salida.';
     return false;
   }
 
@@ -60,8 +76,9 @@ async function fetchHabitaciones(requireDates = false) {
     const response = await api.get('/huesped/habitaciones-disponibles', { params });
     habitaciones.value = normalizeRooms(response.data);
   } catch (err) {
-    error.value =
-      err.response?.data?.message || 'No pudimos cargar las habitaciones disponibles.';
+    if (!err.response) return;
+
+    error.value = extractApiMessage(err);
   } finally {
     loading.value = false;
   }
@@ -70,7 +87,10 @@ async function fetchHabitaciones(requireDates = false) {
 function reservar(habitacion) {
   router.push({
     path: '/panel/reservar',
-    query: { habitacion_id: habitacion.id },
+    query: {
+      habitacion_id: habitacion.id,
+      capacidad: habitacion.capacidad,
+    },
   });
 }
 
@@ -116,8 +136,8 @@ onMounted(() => fetchHabitaciones(false));
     <p v-if="error" class="message error">{{ error }}</p>
     <div v-if="loading" class="state-card">Cargando habitaciones...</div>
 
-    <div v-else-if="habitaciones.length === 0" class="state-card">
-      No hay habitaciones disponibles para los criterios seleccionados.
+    <div v-else-if="habitaciones.length === 0" class="state-card warning">
+      No hay habitaciones disponibles para las fechas seleccionadas.
     </div>
 
     <div v-else class="room-grid">
@@ -250,6 +270,11 @@ button:disabled {
 .message.error {
   background: #fff0ed;
   color: #b42318;
+}
+
+.state-card.warning {
+  background: #fff8df;
+  color: #8a5d1f;
 }
 
 .room-grid {

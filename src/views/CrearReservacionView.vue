@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CalendarPlus } from 'lucide-vue-next';
 import api from '../api/axios';
@@ -9,8 +9,12 @@ const router = useRouter();
 
 const today = new Date().toISOString().slice(0, 10);
 const loading = ref(false);
+const loadingRooms = ref(false);
 const error = ref('');
+const warning = ref('');
 const success = ref('');
+const habitaciones = ref([]);
+const initialRoom = ref(null);
 
 const form = reactive({
   habitacion_id: '',
@@ -19,16 +23,57 @@ const form = reactive({
   cantidad_personas: 1,
 });
 
+const selectedRoom = computed(() => {
+  const roomId = Number(form.habitacion_id);
+
+  if (!roomId) return null;
+
+  return habitaciones.value.find((habitacion) => Number(habitacion.id) === roomId) || initialRoom.value;
+});
+
+function normalizeRooms(payload) {
+  return payload?.data || payload?.habitaciones || payload || [];
+}
+
+function getRoomCapacity(habitacion) {
+  return Number(habitacion?.capacidad || habitacion?.tipo_habitacion?.capacidad || 0);
+}
+
+function getRoomLabel(habitacion) {
+  const number = habitacion.numero ? `Habitación ${habitacion.numero}` : `Habitación ${habitacion.id}`;
+  const type = habitacion.tipo || habitacion.tipo_habitacion?.nombre || habitacion.tipo_habitacion || 'Disponible';
+  const capacity = getRoomCapacity(habitacion);
+
+  return `${number} - ${type}${capacity ? ` - ${capacity} personas` : ''}`;
+}
+
+function extractApiMessage(err) {
+  const data = err.response?.data;
+
+  if (data?.message) return data.message;
+
+  if (data?.errors) {
+    const firstError = Object.values(data.errors)
+      .flat()
+      .find(Boolean);
+
+    if (firstError) return firstError;
+  }
+
+  return 'No pudimos crear la reservación. Revisa los datos e intenta nuevamente.';
+}
+
 function validateForm() {
   error.value = '';
+  success.value = '';
 
-  if (!form.habitacion_id) {
-    error.value = 'Selecciona o ingresa una habitación para reservar.';
+  if (!form.fecha_entrada) {
+    error.value = 'Selecciona una fecha de entrada.';
     return false;
   }
 
-  if (!form.fecha_entrada) {
-    error.value = 'La fecha de entrada es requerida.';
+  if (!form.fecha_salida) {
+    error.value = 'Selecciona una fecha de salida.';
     return false;
   }
 
@@ -37,24 +82,77 @@ function validateForm() {
     return false;
   }
 
-  if (!form.fecha_salida) {
-    error.value = 'La fecha de salida es requerida.';
-    return false;
-  }
-
   if (form.fecha_salida <= form.fecha_entrada) {
     error.value = 'La fecha de salida debe ser posterior a la fecha de entrada.';
     return false;
   }
 
+  if (!form.habitacion_id) {
+    error.value = 'Selecciona una habitación.';
+    return false;
+  }
+
+  if (form.cantidad_personas === '' || form.cantidad_personas === null || form.cantidad_personas === undefined) {
+    error.value = 'Ingresa la cantidad de personas.';
+    return false;
+  }
+
   const people = Number(form.cantidad_personas);
 
-  if (!Number.isInteger(people) || people < 1) {
-    error.value = 'La cantidad de personas debe ser un número entero mínimo de 1.';
+  if (!Number.isFinite(people) || people <= 0) {
+    error.value = 'La cantidad de personas debe ser mayor a 0.';
+    return false;
+  }
+
+  const capacity = getRoomCapacity(selectedRoom.value);
+
+  if (capacity && people > capacity) {
+    error.value = 'La cantidad de personas supera la capacidad de la habitación.';
     return false;
   }
 
   return true;
+}
+
+async function fetchHabitacionesDisponibles() {
+  warning.value = '';
+  habitaciones.value = [];
+
+  if (!form.fecha_entrada || !form.fecha_salida) return;
+  if (form.fecha_entrada < today || form.fecha_salida <= form.fecha_entrada) return;
+
+  loadingRooms.value = true;
+
+  try {
+    const response = await api.get('/huesped/habitaciones-disponibles', {
+      params: {
+        fecha_entrada: form.fecha_entrada,
+        fecha_salida: form.fecha_salida,
+      },
+    });
+
+    habitaciones.value = normalizeRooms(response.data);
+
+    const currentRoomId = Number(form.habitacion_id);
+    const currentRoomIsAvailable = habitaciones.value.some((habitacion) => Number(habitacion.id) === currentRoomId);
+
+    if (currentRoomId && currentRoomIsAvailable) {
+      initialRoom.value = null;
+    } else if (currentRoomId) {
+      form.habitacion_id = '';
+      initialRoom.value = null;
+    }
+
+    if (habitaciones.value.length === 0) {
+      warning.value = 'No hay habitaciones disponibles para las fechas seleccionadas.';
+    }
+  } catch (err) {
+    if (!err.response) return;
+
+    error.value = extractApiMessage(err);
+  } finally {
+    loadingRooms.value = false;
+  }
 }
 
 async function submitReservation() {
@@ -75,10 +173,9 @@ async function submitReservation() {
     success.value = 'Reservación creada correctamente.';
     setTimeout(() => router.push('/panel/reservaciones'), 900);
   } catch (err) {
-    error.value =
-      err.response?.data?.message ||
-      err.response?.data?.errors?.habitacion_id?.[0] ||
-      'No pudimos crear la reservación. Revisa los datos e intenta nuevamente.';
+    if (!err.response) return;
+
+    error.value = extractApiMessage(err);
   } finally {
     loading.value = false;
   }
@@ -88,7 +185,23 @@ onMounted(() => {
   if (route.query.habitacion_id) {
     form.habitacion_id = String(route.query.habitacion_id);
   }
+
+  if (route.query.habitacion_id && route.query.capacidad) {
+    initialRoom.value = {
+      id: Number(route.query.habitacion_id),
+      capacidad: Number(route.query.capacidad),
+    };
+  }
 });
+
+watch(
+  () => [form.fecha_entrada, form.fecha_salida],
+  () => {
+    error.value = '';
+    warning.value = '';
+    fetchHabitacionesDisponibles();
+  },
+);
 </script>
 
 <template>
@@ -106,15 +219,14 @@ onMounted(() => {
       </div>
 
       <p class="note">El total será calculado y confirmado por el sistema.</p>
+      <p class="note warning-note">
+        Una habitación solo vuelve a estar disponible 2 días después del check-out anterior.
+      </p>
       <p v-if="error" class="message error">{{ error }}</p>
+      <p v-if="warning" class="message warning">{{ warning }}</p>
       <p v-if="success" class="message success">{{ success }}</p>
 
       <form class="reservation-form" @submit.prevent="submitReservation">
-        <label>
-          Habitación
-          <input v-model="form.habitacion_id" type="number" min="1" required />
-        </label>
-
         <label>
           Fecha entrada
           <input v-model="form.fecha_entrada" type="date" :min="today" required />
@@ -123,6 +235,21 @@ onMounted(() => {
         <label>
           Fecha salida
           <input v-model="form.fecha_salida" type="date" :min="form.fecha_entrada || today" required />
+        </label>
+
+        <label class="full-field">
+          Habitación
+          <select v-model="form.habitacion_id" :disabled="loadingRooms || habitaciones.length === 0">
+            <option value="">
+              {{ loadingRooms ? 'Buscando habitaciones...' : 'Selecciona una habitación' }}
+            </option>
+            <option v-if="initialRoom && form.habitacion_id" :value="String(initialRoom.id)">
+              Habitación seleccionada - {{ getRoomCapacity(initialRoom) }} personas
+            </option>
+            <option v-for="habitacion in habitaciones" :key="habitacion.id" :value="String(habitacion.id)">
+              {{ getRoomLabel(habitacion) }}
+            </option>
+          </select>
         </label>
 
         <label>
@@ -191,7 +318,7 @@ h2 {
 }
 
 .note {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   padding: 12px 14px;
   border-radius: 8px;
   background: #fbf8f1;
@@ -208,6 +335,12 @@ h2 {
 .message.error {
   background: #fff0ed;
   color: #b42318;
+}
+
+.message.warning,
+.warning-note {
+  background: #fff8df;
+  color: #8a5d1f;
 }
 
 .message.success {
@@ -229,13 +362,24 @@ label {
   font-weight: 800;
 }
 
-input {
+input,
+select {
   min-height: 44px;
   padding: 0 12px;
   border: 1px solid var(--hotel-border);
   border-radius: 8px;
   background: #fff;
   color: var(--hotel-ink);
+  font: inherit;
+}
+
+select:disabled {
+  color: var(--hotel-muted);
+  background: #fbf8f1;
+}
+
+.full-field {
+  grid-column: 1 / -1;
 }
 
 button {

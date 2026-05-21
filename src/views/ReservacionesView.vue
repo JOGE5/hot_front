@@ -11,6 +11,22 @@ function normalizeList(payload) {
   return payload?.data || payload?.reservaciones || payload || [];
 }
 
+function extractApiMessage(err) {
+  const data = err.response?.data;
+
+  if (data?.message) return data.message;
+
+  if (data?.errors) {
+    const firstError = Object.values(data.errors)
+      .flat()
+      .find(Boolean);
+
+    if (firstError) return firstError;
+  }
+
+  return 'No pudimos cargar tus reservaciones.';
+}
+
 async function fetchReservaciones() {
   loading.value = true;
   error.value = '';
@@ -19,8 +35,9 @@ async function fetchReservaciones() {
     const response = await api.get('/huesped/mis-reservaciones');
     reservaciones.value = normalizeList(response.data);
   } catch (err) {
-    error.value =
-      err.response?.data?.message || 'No pudimos cargar tus reservaciones.';
+    if (!err.response) return;
+
+    error.value = extractApiMessage(err);
   } finally {
     loading.value = false;
   }
