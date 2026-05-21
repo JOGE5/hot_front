@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { auth } from '../stores/auth';
+import { backendStatus } from '../stores/backendStatus';
 
 import LoginView from '../views/LoginView.vue';
 import HuespedLayout from '../layouts/HuespedLayout.vue';
@@ -75,7 +76,7 @@ router.beforeEach((to) => {
     return '/login';
   }
 
-  if (to.name === 'login' && auth.isAuthenticated()) {
+  if (to.name === 'login' && auth.isAuthenticated() && !backendStatus.isOffline) {
     return '/panel';
   }
 });
