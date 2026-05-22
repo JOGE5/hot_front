@@ -9,21 +9,88 @@ const router = useRouter();
 const email = ref('');
 const password = ref('');
 const error = ref('');
+const errorTone = ref('error');
 const loading = ref(false);
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function setError(message, tone = 'error') {
+  error.value = message;
+  errorTone.value = tone;
+}
+
+function validateForm() {
+  const emailValue = email.value.trim();
+
+  if (!emailValue) {
+    setError('Ingresa tu correo electr\u00f3nico.', 'warning');
+    return false;
+  }
+
+  if (!isValidEmail(emailValue)) {
+    setError('Ingresa un correo electr\u00f3nico v\u00e1lido.', 'warning');
+    return false;
+  }
+
+  if (!password.value) {
+    setError('Ingresa tu contrase\u00f1a.', 'warning');
+    return false;
+  }
+
+  return true;
+}
+
+function getLoginErrorMessage(e) {
+  const status = e.response?.status;
+  const data = e.response?.data || {};
+
+  if (status === 429 || data.bloqueado === true) {
+    return {
+      message: 'Demasiados intentos fallidos. Intenta nuevamente en unos minutos.',
+      tone: 'error',
+    };
+  }
+
+  if (status === 401 && data.intentos_restantes !== undefined) {
+    return {
+      message: `Correo o contrase\u00f1a incorrectos. Intentos restantes: ${data.intentos_restantes}`,
+      tone: 'warning',
+    };
+  }
+
+  if (status === 401) {
+    return {
+      message: data.message || 'Correo o contrase\u00f1a incorrectos.',
+      tone: 'warning',
+    };
+  }
+
+  return {
+    message: 'No pudimos iniciar sesi\u00f3n en este momento. Intenta nuevamente.',
+    tone: 'error',
+  };
+}
 
 async function login() {
   error.value = '';
+
+  if (!validateForm()) return;
+
   loading.value = true;
 
   try {
     await auth.login({
-      email: email.value,
+      email: email.value.trim(),
       password: password.value,
     });
 
+    error.value = '';
     router.push('/panel');
   } catch (e) {
-    error.value = 'Credenciales incorrectas o usuario no autorizado.';
+    const loginError = getLoginErrorMessage(e);
+    setError(loginError.message, loginError.tone);
   } finally {
     loading.value = false;
   }
@@ -36,27 +103,27 @@ async function login() {
       <div class="brand">
         <div class="logo">LM</div>
         <p>Hotel Club Campestre</p>
-        <h1>La Mansión</h1>
+        <h1>La Mansi&oacute;n</h1>
       </div>
 
-      <form @submit.prevent="login">
+      <form novalidate @submit.prevent="login">
         <label>
-          Correo electrónico
+          Correo electr&oacute;nico
           <span class="field">
             <Mail :size="18" />
-            <input v-model="email" type="email" required />
+            <input v-model="email" type="email" autocomplete="email" required />
           </span>
         </label>
 
         <label>
-          Contraseña
+          Contrase&ntilde;a
           <span class="field">
             <LockKeyhole :size="18" />
-            <input v-model="password" type="password" required />
+            <input v-model="password" type="password" autocomplete="current-password" required />
           </span>
         </label>
 
-        <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="error" class="message" :class="errorTone">{{ error }}</p>
 
         <button type="submit" :disabled="loading">
           {{ loading ? 'Ingresando...' : 'Ingresar al panel' }}
@@ -181,13 +248,21 @@ button:disabled {
   opacity: 0.72;
 }
 
-.error {
+.message {
   margin: 0;
   padding: 11px 12px;
   border-radius: 8px;
-  background: #fff0ed;
-  color: #b42318;
   font-size: 14px;
   font-weight: 700;
+}
+
+.message.warning {
+  background: #fff8df;
+  color: #8a5d1f;
+}
+
+.message.error {
+  background: #fff0ed;
+  color: #b42318;
 }
 </style>
