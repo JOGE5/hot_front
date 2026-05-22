@@ -219,9 +219,6 @@ watch(
       </div>
 
       <p class="note">El total será calculado y confirmado por el sistema.</p>
-      <p class="note warning-note">
-        Una habitación solo vuelve a estar disponible 2 días después del check-out anterior.
-      </p>
       <p v-if="error" class="message error">{{ error }}</p>
       <p v-if="warning" class="message warning">{{ warning }}</p>
       <p v-if="success" class="message success">{{ success }}</p>
@@ -337,8 +334,7 @@ h2 {
   color: #b42318;
 }
 
-.message.warning,
-.warning-note {
+.message.warning {
   background: #fff8df;
   color: #8a5d1f;
 }
